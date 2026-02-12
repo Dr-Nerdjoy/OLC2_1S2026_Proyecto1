@@ -1,7 +1,7 @@
 grammar Golampi;
 
 // Regla inicial
-start : instrucciones EOF;
+start : (instruccion | funcion)* EOF;
 
 instrucciones : instruccion* ;
 
@@ -12,6 +12,7 @@ tipos   : 'int'
         | 'string'
         | 'bool'
         | 'char'
+        | 'void'
         ;
 instruccion : 'print' '(' expr ')' ';'              # PrintStmt
             | 'if' '(' expr ')' bloque
@@ -19,8 +20,17 @@ instruccion : 'print' '(' expr ')' ';'              # PrintStmt
             | 'while' '(' expr ')' bloque           # WhileStmt
             | tipos ID '=' expr ';'                 # DeclaracionStmt
             | ID '=' expr ';'                       # AsignacionStmt
+            | 'for' '(' instruccion expr ';' instruccion ')' bloque  # ForStmt
+            | 'break' ';'                           # BreakStmt
+            | 'continue' ';'                        # ContinueStmt
+            | 'return' expr? ';'                    # ReturnStmt
             | bloque                                # BloqueStmt  // Para soportar { } sueltos
             ;
+// Definición de una función: tipo nombre ( params ) { codigo }
+funcion : tipos ID '(' parametros? ')' bloque  # FuncStmt ;
+
+// Lista de parámetros: int a, float b...
+parametros : tipos ID (',' tipos ID)* ;
 
 expr : '!' expr                       # Not          // Nivel 1: Unario
      | '-' expr                       # Negacion     // Nivel 1: Unario (ej: -5)
@@ -36,6 +46,7 @@ expr : '!' expr                       # Not          // Nivel 1: Unario
      | CHAR                           # Char
      | 'true'                         # True
      | 'false'                        # False
+     | ID '(' (expr (',' expr)*)? ')'     # Llamada
      | ID                             # Id
      | '(' expr ')'                   # Parens
      ;
