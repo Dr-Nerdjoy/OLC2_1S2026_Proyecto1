@@ -284,7 +284,45 @@ class Interpreter extends GolampiBaseVisitor {
             throw new \Exception("Error: Asignacion invalida a un arreglo.");
         }
     }
+// ==========================================
+    // 9. CICLO FOR
+    // ==========================================
 
+    public function visitForStmt($ctx) {
+        // 1. Crear un entorno local (Scope) específico para el ciclo For
+        // Esto permite que 'int i = 0;' solo exista dentro del ciclo
+        $entornoAnterior = $this->environment;
+        $this->environment = new \App\Custom\Environment($entornoAnterior);
+
+        // 2. Ejecutar la instrucción de inicialización (ej: int i = 0;)
+        // Nota: En ANTLR, los elementos repetidos se agrupan en arreglos.
+        $this->visit($ctx->instruccion(0));
+
+        // 3. Evaluar la condición mientras sea verdadera (ej: i < 5)
+        while ($this->visit($ctx->expr())) {
+
+            // 4. Ejecutar el bloque de código
+            $resultado = $this->visit($ctx->bloque());
+
+            // 5. Manejo de señales (Break, Continue, Return)
+            if ($resultado instanceof \App\Custom\BreakType) {
+                break; // Romper el ciclo de PHP
+            }
+            if ($resultado instanceof \App\Custom\ReturnType) {
+                $this->environment = $entornoAnterior; // Limpiar memoria
+                return $resultado; // Propagar el return a la función padre
+            }
+            // Si es un Continue, simplemente dejamos que pase a la siguiente fase
+            // que es la actualización de la variable.
+
+            // 6. Ejecutar la instrucción de incremento/actualización (ej: i = i + 1;)
+            $this->visit($ctx->instruccion(1));
+        }
+
+        // 7. Al terminar el ciclo, destruimos el entorno local para liberar memoria
+        $this->environment = $entornoAnterior;
+        return null;
+    }
 
     // ==========================================
     // 5. OPERACIONES LÓGICAS Y RELACIONALES
