@@ -284,7 +284,7 @@ class Interpreter extends GolampiBaseVisitor {
             throw new \Exception("Error: Asignacion invalida a un arreglo.");
         }
     }
-// ==========================================
+    // ==========================================
     // 9. CICLO FOR
     // ==========================================
 
