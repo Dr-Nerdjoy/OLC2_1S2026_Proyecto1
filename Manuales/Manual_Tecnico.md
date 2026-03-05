@@ -39,3 +39,116 @@ Se implementó un sistema robusto de captura de errores para evitar fallos silen
 
 ## 7. Generación del AST
 Para la visualización gráfica del código analizado, se diseñó la clase `DotGenerator.php`, la cual realiza un recorrido recursivo sobre el árbol de ANTLR y genera un script en formato **Graphviz (DOT)**. Posteriormente, la librería web `Viz.js` renderiza este script generando un gráfico vectorial interactivo en el navegador del usuario.
+
+## 8. Gramática Formal de Golampi
+
+A continuación se presenta la gramática formal del lenguaje, desarrollada con ANTLR4, definiendo las reglas léxicas y sintácticas utilizadas para la generación del Árbol de Parseo.
+
+```antlr
+grammar Golampi;
+
+// Regla inicial
+start : (instruccion | funcion)* EOF;
+
+instrucciones : instruccion* ;
+// Permite anidar código
+bloque : '{' instrucciones '}' ;
+
+// Tipos de datos soportados
+tipos   : 'int' | 'float' | 'string' | 'bool' | 'char' | 'void' ;
+
+// Definición: int suma(int a, int b) { ... }
+funcion : tipos ID '(' parametros? ')' bloque  # FuncStmt ;
+
+// Lista de parámetros: int a, string b
+parametros : tipos ID (',' tipos ID)* ;
+
+instruccion : 'print' '(' expr ')' ';'              # PrintStmt
+            | 'if' '(' expr ')' bloque ('else' bloque)? # IfStmt
+            | 'while' '(' expr ')' bloque           # WhileStmt
+            | 'for' '(' instruccion expr ';' instruccion ')' bloque  # ForStmt
+            
+            // Variables y Asignaciones
+            | tipos ID '=' expr ';'                 # DeclaracionStmt
+            | ID '=' expr ';'                       # AsignacionStmt
+            | expr '[' expr ']' '=' expr ';'        # AsignacionArrayStmt
+
+            // Control de Flujo
+            | 'break' ';'                           # BreakStmt
+            | 'continue' ';'                        # ContinueStmt
+            | 'return' expr? ';'                    # ReturnStmt
+
+            | bloque                                # BloqueStmt
+            | ID '(' (expr (',' expr)*)? ')' ';'    # CallStmt
+            ;
+
+expr : expr '[' expr ']'                      # ArrayAccess
+     | NEW tipos ('[' expr ']')+              # ArrayNew
+     | '{' (expr (',' expr)*)? '}'            # ArrayInit
+     | ID '(' (expr (',' expr)*)? ')'         # Llamada
+     | '!' expr                               # Not          // Nivel 1: Unario
+     | '-' expr                               # Negacion     // Nivel 1: Unario (ej: -5)
+     | expr op=('*'|'/'|'%') expr             # MulDiv       // Nivel 2: Multiplicación
+     | expr op=('+'|'-') expr                 # AddSub       // Nivel 3: Suma
+     | expr op=('<='|'>='|'<'|'>') expr       # Relational   // Nivel 4: Comparación
+     | expr op=('=='|'!=') expr               # Equality     // Nivel 5: Igualdad
+     | expr op='&&' expr                      # And          // Nivel 6: Lógica AND
+     | expr op='||' expr                      # Or           // Nivel 7: Lógica OR
+     | INT                                    # Int          // Valores primitivos
+     | FLOAT                                  # Float
+     | STRING                                 # String
+     | CHAR                                   # Char
+     | 'true'                                 # True
+     | 'false'                                # False
+     | ID                                     # Id
+     | '(' expr ')'                           # Parens
+     ;
+
+NEW : 'new';
+PRINT   : 'print';
+IF      : 'if';
+
+// Tipos primitivos
+INT : [0-9]+ ;
+FLOAT   : [0-9]+ '.' [0-9]+ ;
+STRING  : '"' (~["\r\n\\] | '\\' .)* '"';
+CHAR    : '\'' . '\'' ;
+ID      : [a-zA-Z_][a-zA-Z0-9_]* ;
+
+WS  : [ \t\r\n]+ -> skip ; // espacio en blanco
+COMMENT : '//' ~[\r\n]* -> skip ;
+BLOCK_COMMENT : '/*' (. | [\r\n])*? '*/' -> skip ;
+```
+
+
+## 9. Flujo de Procesamiento y Tabla de Símbolos
+
+El flujo de procesamiento de Golampi sigue el modelo secuencial de un intérprete dirigido por sintaxis:
+
+1. **Lectura y Análisis Léxico:** El código fuente ingresado en el frontend web (`index.php`) es convertido en un flujo de caracteres y procesado por el `GolampiLexer`, el cual lo transforma en una secuencia de Tokens.
+2. **Análisis Sintáctico:** El `GolampiParser` recibe los Tokens, valida que cumplan con la gramática formal y construye el Árbol de Sintaxis Abstracta (Parse Tree). Si ocurre un error, el `ErrorListener` interrumpe el flujo y reporta la falla.
+3. **Análisis Semántico e Interpretación:** La clase `Interpreter` aplica el patrón Visitor para recorrer el árbol. En cada nodo, se validan los tipos de datos, se resuelven operaciones matemáticas/lógicas y se ejecutan las sentencias.
+
+### Gestión de Memoria (Tabla de Símbolos)
+La "Tabla de Símbolos" está implementada en la clase dinámica `Environment`. Esta clase funciona mediante un sistema de **Ámbitos (Scopes) encadenados**.
+
+* **Creación de Entornos:** Cada vez que el intérprete ingresa a un nuevo bloque de código (una función, un ciclo `for`, una instrucción `if`), se instancia un nuevo objeto `Environment`.
+* **Referencia al Padre:** Este nuevo entorno guarda una referencia directa a su entorno padre.
+* **Resolución de Variables:** Cuando se solicita una variable, el intérprete la busca primero en el entorno actual. Si no la encuentra, escala recursivamente al entorno padre hasta llegar al ámbito global. Si no existe en ningún nivel, arroja un error semántico.
+
+**Representación abstracta de la memoria en ejecución:**
+
+| Ámbito (Scope) | Nivel | Identificador | Tipo | Valor |
+| :--- | :---: | :--- | :---: | :--- |
+| `Global` | 0 | `matriz` | `int[][]` | `[Array]` |
+| `Global` | 0 | `factorial` | `función` | `[Closure]` |
+| ↳ `Local (Llamada Función)` | 1 | `n` | `int` | `5` |
+| &nbsp;&nbsp;&nbsp;&nbsp;↳ `Local (Ciclo For)` | 2 | `i` | `int` | `0` |
+
+Este diseño asegura que las variables locales se destruyan automáticamente al finalizar su bloque (liberando memoria) y previene la colisión de identificadores entre diferentes funciones.
+
+## 10. Diagrama de Clases
+
+La arquitectura orientada a objetos del intérprete se estructura separando la lógica de la gramática (generada por ANTLR) y la lógica de ejecución (implementada mediante el patrón Visitor).
+
+![Diagrama de Clases de Golampi](Imagenes/diagrama_clases.png)
